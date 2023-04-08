@@ -1,10 +1,10 @@
-from mqtt_over_http import MqttConnection, MqttPublish
+from mqtt_over_tcp import MqttConnection, MqttPublish
 import serial
 import time
 
 
 # Configurações do servidor MQTT e da mensagem MQTT
-mqtt_server = "mqtt.thingsboard.cloud"  # Endereço do servidor MQTT
+mqtt_server = "broker.hivemq.com"  # Endereço do servidor MQTT
 mqtt_port = "1883"
 
 mqtt_client_id = "dgtsim"  # Tópico MQTT para envio da mensagem
@@ -16,20 +16,22 @@ mqtt_topic = "v1/devices/me/telemetry"
 # Configurações do dispositivo SIM800L
 SERIAL_PORT = "COM24"  # Porta serial do dispositivo
 BAUDRATE = 9600  # Taxa de transmissão
-TIMEOUT = 3  # Tempo máximo de espera para a resposta do dispositivo
+TIMEOUT = 5  # Tempo máximo de espera para a resposta do dispositivo
 
 
-def transmit(payload: bytes):
-    pyl = payload + b"\r\n"
+def transmit(payload: bytes, endline: bool = True):
+    pyl = payload
+    if endline:
+        pyl = pyl + b"\r\n"
     print(f"TX: {pyl}")
-    ser.write((f"{pyl}").encode())
+    ser.write(pyl)
+    ser.flush()
 
 
 def receive():
-    response = ser.readline().decode()
-    print(f"RX: {response}")
-    response = ser.readline().decode()
-    print(f"RX: {response}")
+    response = ser.readlines()
+    for i in response:
+        print(f"RX: {i}")
 
 
 # Create serial conection
@@ -53,21 +55,16 @@ time.sleep(2)
 # Start TCP connection
 transmit((f'AT+CIPSTART="TCP","{mqtt_server}","{mqtt_port}"').encode())
 receive()
-time.sleep(7)
-
-frame = MqttConnection(mqtt_client_id, mqtt_username, mqtt_password).generate_request()
-transmit((f"AT+CIPSEND={len(frame)}").encode())
-transmit(frame)
-receive()
-print(f"CONNECT => frame: {frame.hex().upper()}")
 
 
 mqtt_message = '{"test":123}'  # Mensagem MQTT a ser enviada
-frame = MqttPublish(mqtt_topic, mqtt_message).generate_request()
-transmit((f"AT+CIPSEND={len(frame)}").encode())
-transmit(frame)
+frame_con = MqttConnection(mqtt_client_id, mqtt_username, mqtt_password).generate_request()
+frame_pub = MqttPublish(mqtt_topic, mqtt_message).generate_request()
+transmit((f"AT+CIPSEND={len(frame_con)+len(frame_pub)}").encode())
+time.sleep(1)
+transmit(frame_con + frame_pub, endline=False)
 receive()
-print(f"PUBLISH => frame: {frame.hex().upper()}")
+print(f"FULL => frame: {(frame_con+frame_pub).hex().upper()}")
 
 # Encerramento da conexão serial
 ser.close()
